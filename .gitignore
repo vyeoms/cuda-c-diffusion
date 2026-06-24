@@ -4,6 +4,7 @@ build/
 nn
 edm_demo
 ddpm_demo
+gradcheck
 
 *.ckpt
 
