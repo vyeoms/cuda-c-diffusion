@@ -222,6 +222,13 @@ void optimizer_step(Optimizer* o, const ParamList* pl, Context* ctx);
 void optimizer_set_lr(Optimizer* o, float lr);
 void optimizer_free(Optimizer* o);
 
+/* Adam step counter (for checkpoint/resume). */
+int optimizer_timestep(const Optimizer* o);
+void optimizer_set_timestep(Optimizer* o, int t);
+/* Append the per-tensor Adam moment buffers (m, v) to the given lists as
+   Param entries (param=buffer, grad=NULL). Adam optimizers only. */
+void optimizer_moment_lists(const Optimizer* o, ParamList* m, ParamList* v);
+
 /* Karras et al. inverse-sqrt LR schedule:
    linear warmup over t_warmup steps, then 1/sqrt(t) decay after t_ref steps. */
 static inline float lr_inv_sqrt(float lr_ref, int step, int t_warmup, int t_ref)
@@ -243,11 +250,23 @@ EMA* ema_create(const ParamList* pl, float decay);
 void ema_update(EMA* ema, const ParamList* pl, Context* ctx);
 void ema_swap(EMA* ema, ParamList* pl, Context* ctx);
 void ema_free(EMA* ema);
+/* Append the per-tensor EMA shadow buffers to the list (for checkpoint/resume). */
+void ema_shadow_list(const EMA* ema, ParamList* shadow);
 
 /* ============================ checkpointing ============================ */
 
 int checkpoint_save(const char* path, const ParamList* pl);
 int checkpoint_load(const char* path, ParamList* pl);
+
+/* Full training-state checkpoint: model params + EMA shadow + Adam moments +
+   the step and Adam counters, so a run can resume exactly. The four lists must
+   already be populated (same tensors/sizes as when saved). Return 0 on success. */
+int checkpoint_save_training(const char* path, int step, int adam_t,
+    const ParamList* params, const ParamList* ema_shadow,
+    const ParamList* adam_m, const ParamList* adam_v);
+int checkpoint_load_training(const char* path, int* step, int* adam_t,
+    ParamList* params, ParamList* ema_shadow,
+    ParamList* adam_m, ParamList* adam_v);
 
 /* ========================= spatial modules (NHWC) ========================= */
 
@@ -271,7 +290,6 @@ typedef struct {
     int emb_dim;
     int heads;
     float t;
-    int mp_mode;
     int cond_slot;
 } UNetConfig;
 

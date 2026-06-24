@@ -53,6 +53,12 @@ void ema_swap(EMA* ema, ParamList* pl, Context* ctx)
     cudaFree(tmp);
 }
 
+void ema_shadow_list(const EMA* ema, ParamList* shadow)
+{
+    for (int i = 0; i < ema->count; ++i)
+        param_list_add(shadow, ema->shadow[i], NULL, ema->sizes[i]);
+}
+
 void ema_free(EMA* ema)
 {
     for (int i = 0; i < ema->count; ++i)

@@ -9,6 +9,7 @@ struct Optimizer {
     float lr, beta1, beta2, eps;
     int t;
     int n; /* number of parameter tensors */
+    int* sizes; /* element count per tensor (Adam only; NULL for SGD) */
     float **m, **v; /* Adam moments per tensor (device); NULL for SGD */
 };
 
@@ -19,6 +20,7 @@ Optimizer* optimizer_sgd(const ParamList* pl, float lr)
     o->lr = lr;
     o->n = pl->count;
     o->t = 0;
+    o->sizes = NULL;
     o->m = NULL;
     o->v = NULL;
     return o;
@@ -35,10 +37,12 @@ Optimizer* optimizer_adam(const ParamList* pl, float lr,
     o->eps = eps;
     o->t = 0;
     o->n = pl->count;
+    o->sizes = (int*)malloc(o->n * sizeof(int));
     o->m = (float**)malloc(o->n * sizeof(float*));
     o->v = (float**)malloc(o->n * sizeof(float*));
     for (int i = 0; i < o->n; ++i) {
         size_t sz = (size_t)pl->items[i].size;
+        o->sizes[i] = pl->items[i].size;
         o->m[i] = nn_device_alloc(sz);
         o->v[i] = nn_device_alloc(sz);
         NN_CUDA_CHECK(cudaMemset(o->m[i], 0, sz * sizeof(float)));
@@ -66,6 +70,18 @@ void optimizer_step(Optimizer* o, const ParamList* pl, Context* ctx)
 
 void optimizer_set_lr(Optimizer* o, float lr) { o->lr = lr; }
 
+int optimizer_timestep(const Optimizer* o) { return o->t; }
+void optimizer_set_timestep(Optimizer* o, int t) { o->t = t; }
+
+void optimizer_moment_lists(const Optimizer* o, ParamList* m, ParamList* v)
+{
+    NN_ASSERT(o->kind == OPT_ADAM, "optimizer_moment_lists: Adam only");
+    for (int i = 0; i < o->n; ++i) {
+        param_list_add(m, o->m[i], NULL, o->sizes[i]);
+        param_list_add(v, o->v[i], NULL, o->sizes[i]);
+    }
+}
+
 void optimizer_free(Optimizer* o)
 {
     if (o->m) {
@@ -75,6 +91,7 @@ void optimizer_free(Optimizer* o)
         }
         free(o->m);
         free(o->v);
+        free(o->sizes);
     }
     free(o);
 }
