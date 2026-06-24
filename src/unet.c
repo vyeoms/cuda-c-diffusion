@@ -49,6 +49,10 @@ UNet* unet_create(Context* ctx, UNetConfig* cfg, int C_in, int C_out,
 {
     UNet* u = (UNet*)calloc(1, sizeof(UNet));
     int L = cfg->levels;
+    NN_ASSERT(L >= 1, "unet: need at least one level");
+    NN_ASSERT(cfg->cond_slot >= 0, "unet: cond_slot not assigned");
+    NN_ASSERT(H % (1 << L) == 0 && W % (1 << L) == 0,
+        "unet: H and W must be divisible by 2^levels");
     u->levels = L;
     u->max_batch = max_batch;
     u->C_in = C_in;

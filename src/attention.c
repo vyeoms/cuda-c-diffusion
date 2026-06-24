@@ -262,6 +262,7 @@ Module* attention_create(Context* ctx, int C, int heads, int H, int W,
     int max_batch, int mp_mode, float gain)
 {
     Module* m = (Module*)malloc(sizeof(Module));
+    NN_ASSERT(C % heads == 0, "attention: C must be divisible by heads");
     AttentionState* st = (AttentionState*)malloc(sizeof(AttentionState));
 
     st->C = C;

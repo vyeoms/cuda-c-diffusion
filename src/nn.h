@@ -40,6 +40,17 @@
         }                                                                    \
     } while (0)
 
+/* Config-invariant check that survives -O3 (unlike assert): a bad shape should
+   fail loudly, not silently train the wrong thing. */
+#define NN_ASSERT(cond, msg)                                   \
+    do {                                                       \
+        if (!(cond)) {                                         \
+            fprintf(stderr, "nn assertion failed %s:%d: %s\n", \
+                __FILE__, __LINE__, msg);                      \
+            exit(1);                                           \
+        }                                                      \
+    } while (0)
+
 static inline float* nn_device_alloc(size_t n_floats)
 {
     float* p;

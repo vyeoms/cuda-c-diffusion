@@ -33,6 +33,13 @@ DDPMUNet* ddpm_unet_create(Context* ctx, DDPMUNetConfig* cfg, int C_in, int C_ou
 {
     DDPMUNet* u = (DDPMUNet*)calloc(1, sizeof(DDPMUNet));
     int L = cfg->levels;
+    NN_ASSERT(L >= 1, "ddpm_unet: need at least one level");
+    NN_ASSERT(cfg->cond_slot >= 0, "ddpm_unet: cond_slot not assigned");
+    NN_ASSERT(H % (1 << L) == 0 && W % (1 << L) == 0,
+        "ddpm_unet: H and W must be divisible by 2^levels");
+    for (int i = 0; i <= L; ++i)
+        NN_ASSERT(cfg->channels[i] % cfg->num_groups == 0,
+            "ddpm_unet: each channel count must be divisible by num_groups");
     u->levels = L;
     u->max_batch = max_batch;
     u->C_in = C_in;

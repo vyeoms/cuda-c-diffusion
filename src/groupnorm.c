@@ -52,6 +52,7 @@ static void groupnorm_free(Module* self)
 Module* spatial_groupnorm_create(int C, int num_groups, int H, int W, int max_batch)
 {
     Module* m = (Module*)malloc(sizeof(Module));
+    NN_ASSERT(C % num_groups == 0, "groupnorm: C must be divisible by num_groups");
     GroupNormState* st = (GroupNormState*)malloc(sizeof(GroupNormState));
     st->C = C;
     st->G = num_groups;
