@@ -1,66 +1,25 @@
-#include "ddpm.h"
-#include <math.h>
+#include "ddim.h"
 #include <stdlib.h>
-#include <string.h>
-
-/* ======================== schedule ======================== */
-
-void ddpm_schedule_init(DDPMSchedule* s, int T, float beta_start, float beta_end)
-{
-    s->T = T;
-    s->beta = (float*)malloc(T * sizeof(float));
-    s->alpha = (float*)malloc(T * sizeof(float));
-    s->alpha_bar = (float*)malloc(T * sizeof(float));
-    s->sqrt_ab = (float*)malloc(T * sizeof(float));
-    s->sqrt_1mab = (float*)malloc(T * sizeof(float));
-
-    for (int t = 0; t < T; ++t) {
-        s->beta[t] = beta_start + (float)t / (float)(T - 1) * (beta_end - beta_start);
-        s->alpha[t] = 1.0f - s->beta[t];
-    }
-    s->alpha_bar[0] = 1.0f - beta_start;
-    for (int t = 1; t < T; ++t)
-        s->alpha_bar[t] = s->alpha_bar[t - 1] * s->alpha[t];
-    for (int t = 0; t < T; ++t) {
-        s->sqrt_ab[t] = sqrtf(s->alpha_bar[t]);
-        s->sqrt_1mab[t] = sqrtf(1.0f - s->alpha_bar[t]);
-    }
-}
-
-void ddpm_schedule_free(DDPMSchedule* s)
-{
-    free(s->beta);
-    free(s->alpha);
-    free(s->alpha_bar);
-    free(s->sqrt_ab);
-    free(s->sqrt_1mab);
-}
-
-/* ======================== DDIM chain (x0-prediction) ======================== */
 
 struct DDIMChain {
-    DDPMSchedule* sched;
+    const DDPMSchedule* sched;
     int S;
     int img_dim;
     int max_batch;
-    int cond_slot;
     int* timesteps;
 
-    float** chain_x;
-    float** chain_x0;
-
-    float* d_t;
+    float** chain_x; /* S+1 */
+    float** chain_x0; /* S   */
 };
 
-DDIMChain* ddim_chain_create(DDPMSchedule* sched, int infer_steps,
-    int img_dim, int max_batch, int cond_slot)
+DDIMChain* ddim_chain_create(const DDPMSchedule* sched, int infer_steps,
+    int img_dim, int max_batch)
 {
     DDIMChain* c = (DDIMChain*)calloc(1, sizeof(DDIMChain));
     c->sched = sched;
     c->S = infer_steps;
     c->img_dim = img_dim;
     c->max_batch = max_batch;
-    c->cond_slot = cond_slot;
 
     c->timesteps = (int*)malloc((infer_steps + 1) * sizeof(int));
     for (int i = 0; i <= infer_steps; ++i)
@@ -75,35 +34,18 @@ DDIMChain* ddim_chain_create(DDPMSchedule* sched, int infer_steps,
         c->chain_x[i] = nn_device_alloc(buf);
     for (int i = 0; i < infer_steps; ++i)
         c->chain_x0[i] = nn_device_alloc(buf);
-
-    c->d_t = nn_device_alloc((size_t)max_batch);
     return c;
 }
 
-static void chain_set_timestep(DDIMChain* c, int t, int batch, Sequential* embed,
-    Context* ctx)
-{
-    float* h_t = (float*)malloc(batch * sizeof(float));
-    for (int b = 0; b < batch; ++b)
-        h_t[b] = (float)t;
-    NN_CUDA_CHECK(cudaMemcpyAsync(c->d_t, h_t, batch * sizeof(float),
-        cudaMemcpyHostToDevice, ctx->stream));
-    free(h_t);
-    ctx_set_cond(ctx, c->cond_slot, NULL);
-    sequential_forward(embed, c->d_t, batch, ctx);
-    ctx_set_cond(ctx, c->cond_slot, sequential_output(embed));
-}
-
 /* DDIM step (x0-prediction, deterministic eta=0):
-     x0_pred = model(x_t, t)                           (model predicts clean image)
-     eps     = (x_t - sqrt_ab[t] * x0_pred) / sqrt_1mab[t]  (derive noise)
+     x0_pred = D(x_t, t)                               (denoiser yields clean x0)
+     eps     = (x_t - sqrt_ab[t] * x0_pred) / sqrt_1mab[t]
      x_{t-1} = sqrt_ab[t-1] * x0_pred + sqrt_1mab[t-1] * eps
-
    Substituting eps:
      x_{t-1} = coeff_x0 * x0_pred + coeff_xt * x_t
    where coeff_x0 = sqrt_ab_prev - sqrt_1mab_prev * sqrt_ab_t / sqrt_1mab_t
          coeff_xt = sqrt_1mab_prev / sqrt_1mab_t                              */
-void ddim_chain_forward(DDIMChain* c, DDPMUNet* unet, Sequential* embed,
+void ddim_chain_forward(DDIMChain* c, Denoiser* den,
     const float* x_T, int batch, Context* ctx)
 {
     int n = batch * c->img_dim;
@@ -118,8 +60,8 @@ void ddim_chain_forward(DDIMChain* c, DDPMUNet* unet, Sequential* embed,
         int t = c->timesteps[i];
         int t_next = c->timesteps[i + 1];
 
-        chain_set_timestep(c, t, batch, embed, ctx);
-        ddpm_unet_forward(unet, c->chain_x[i], c->chain_x0[i], batch, ctx);
+        denoiser_forward_uniform(den, ctx, c->chain_x[i], c->chain_x0[i],
+            batch, (float)t);
 
         if (t_next == 0) {
             NN_CUDA_CHECK(cudaMemcpyAsync(c->chain_x[i + 1], c->chain_x0[i],
@@ -148,7 +90,6 @@ void ddim_chain_free(DDIMChain* c)
         cudaFree(c->chain_x[i]);
     for (int i = 0; i < c->S; ++i)
         cudaFree(c->chain_x0[i]);
-    cudaFree(c->d_t);
     free(c->chain_x);
     free(c->chain_x0);
     free(c->timesteps);

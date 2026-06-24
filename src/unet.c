@@ -73,9 +73,9 @@ UNet* unet_create(Context* ctx, UNetConfig* cfg, int C_in, int C_out,
     }
 
     u->in_conv = conv2d_create(ctx, C_in, u->ch[0], 3, 1, 1, H, W,
-        max_batch, cfg->mp_mode, 1.0f);
+        max_batch, 1, 1.0f);
     u->out_conv = conv2d_create(ctx, u->ch[0], C_out, 3, 1, 1, H, W,
-        max_batch, cfg->mp_mode, 1.0f);
+        max_batch, 1, 1.0f);
 
     u->enc_blocks = (Module**)malloc(L * sizeof(Module*));
     u->down = (Module**)malloc(L * sizeof(Module*));
@@ -91,10 +91,10 @@ UNet* unet_create(Context* ctx, UNetConfig* cfg, int C_in, int C_out,
             Hi, Wi, max_batch, cfg->t, cfg->cond_slot);
         u->down[i] = downsample_create(Ci, Hi, Wi, max_batch);
         u->enc_proj[i] = conv2d_create(ctx, Ci, Cn, 1, 1, 0,
-            Hi / 2, Wi / 2, max_batch, cfg->mp_mode, 1.0f);
+            Hi / 2, Wi / 2, max_batch, 1, 1.0f);
         u->up[i] = upsample_create(Cn, u->Hs[i + 1], u->Ws[i + 1], max_batch);
         u->dec_proj[i] = conv2d_create(ctx, Cn + Ci, Ci, 1, 1, 0,
-            Hi, Wi, max_batch, cfg->mp_mode, 1.0f);
+            Hi, Wi, max_batch, 1, 1.0f);
         u->dec_blocks[i] = cond_conv_residual_create(ctx, Ci, cfg->emb_dim,
             Hi, Wi, max_batch, cfg->t, cfg->cond_slot);
         u->skip_buf[i] = nn_device_alloc((size_t)max_batch * Hi * Wi * Ci);
@@ -104,7 +104,7 @@ UNet* unet_create(Context* ctx, UNetConfig* cfg, int C_in, int C_out,
     u->mid_block1 = cond_conv_residual_create(ctx, Cb, cfg->emb_dim,
         Hb, Wb, max_batch, cfg->t, cfg->cond_slot);
     u->mid_attn = attention_create(ctx, Cb, cfg->heads, Hb, Wb,
-        max_batch, cfg->mp_mode, 1.0f);
+        max_batch, 1, 1.0f);
     u->mid_block2 = cond_conv_residual_create(ctx, Cb, cfg->emb_dim,
         Hb, Wb, max_batch, cfg->t, cfg->cond_slot);
 
