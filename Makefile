@@ -33,6 +33,10 @@ edm_demo: $(B)/edm/main_edm.o $(SHARED_OBJ) $(CU_OBJ)
 ddpm_demo: $(B)/ddpm/main_ddpm.o $(B)/ddpm/ddpm.o $(SHARED_OBJ) $(CU_OBJ)
 	$(NVCC) $(GENCODE) $^ -o ddpm_demo $(LIBS)
 
+# --- finite-difference gradient check (FP32, full module coverage) ---
+gradcheck: $(B)/tests/gradcheck.o $(SHARED_OBJ) $(CU_OBJ)
+	$(NVCC) $(GENCODE) $^ -o gradcheck $(LIBS)
+
 # --- compilation rules ---
 $(B)/%.o: $(S)/%.c $(S)/nn.h | $(B)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -53,8 +57,8 @@ $(B)/ddpm/main_ddpm.o: $(S)/mnist_io.h $(S)/pgm_io.h $(S)/ini.h
 $(B)/kernels.o: $(S)/kernels.cu $(S)/nn.h | $(B)
 	$(NVCC) $(NVCCFLAGS) -I$(S) -c $< -o $@
 
-$(B) $(B)/edm $(B)/ddpm:
+$(B) $(B)/edm $(B)/ddpm $(B)/tests $(B)/diffusion $(B)/samplers:
 	mkdir -p $@
 
 clean:
-	rm -rf $(B) nn edm_demo ddpm_demo
+	rm -rf $(B) nn edm_demo ddpm_demo gradcheck
